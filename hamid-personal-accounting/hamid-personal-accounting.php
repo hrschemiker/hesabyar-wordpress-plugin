@@ -2,7 +2,7 @@
 /**
  * Plugin Name: HesabYar — Personal Accounting
  * Description: افزونه حسابداری شخصی فارسی با حساب‌ها، تراکنش‌ها، طلب و بدهی، دارایی‌ها، گزارش و نمودار سبک با رابط کاربری مدرن فارسی. دارای اتصال دوطرفه به نرم‌افزار دسکتاپ حساب‌یار.
- * Version: 3.14.0
+ * Version: 3.15.0
  * Author: hrschemiker
  * Text Domain: hamid-personal-accounting
  */
@@ -10,7 +10,7 @@
 if (!defined('ABSPATH')) { exit; }
 
 final class Hamid_Personal_Accounting {
-    const VERSION = '3.14.0';
+    const VERSION = '3.15.0';
     const ROLE = 'personal_finance_manager';
     const CAP = 'hpa_manage_accounting';
     const AUTHORIZED_EMAIL = 'hrschemiker@gmail.com';
@@ -624,6 +624,13 @@ final class Hamid_Personal_Accounting {
     private function currencies() { return ['toman'=>'تومان','rial'=>'ریال','usd'=>'دلار','eur'=>'یورو','aed'=>'درهم','try'=>'لیر']; }
     private function account_types() { return ['cash'=>'نقدی','bank'=>'بانکی','credit'=>'اعتباری']; }
     private function transaction_types() { return ['income'=>'درآمد','expense'=>'هزینه','loan_installment'=>'پرداخت قسط','recurring_debt'=>'بدهی تکرارشونده','transfer'=>'انتقال بین حساب‌ها','person_transfer'=>'انتقال بین اشخاص','debt_incur'=>'دریافت قرض/وام','debt_settlement'=>'تسویه بدهی','receivable_settlement'=>'تسویه طلب','check_settlement'=>'تسویه چک','asset_buy'=>'خرید دارایی','asset_sell'=>'فروش دارایی']; }
+    // طبقه‌بندی حسابداری: فقط مصرف واقعی «هزینه» است. بازپرداخت اصل بدهی/وام، خرید/فروش دارایی و
+    // گرفتن/وصول قرض «جابه‌جایی پول (تأمین مالی)» هستند و درآمد یا هزینه حساب نمی‌شوند.
+    private function expense_types() { return ['expense','recurring_debt']; }
+    private function financing_out_types() { return ['loan_installment','debt_settlement','check_settlement','asset_buy']; }
+    private function financing_in_types() { return ['debt_incur','asset_sell','receivable_settlement']; }
+    private function cash_out_types() { return array_merge($this->expense_types(), $this->financing_out_types()); }
+    private function cash_in_types() { return array_merge(['income'], $this->financing_in_types()); }
     private function asset_groups() { return ['gold'=>'طلا','silver'=>'نقره','crypto'=>'کریپتو','cash_currency'=>'ارز نقدی','property'=>'ملک','car'=>'خودرو','valuable'=>'کالای ارزشمند','other'=>'سایر']; }
     private function asset_group_icon($group) { $icons = ['gold'=>'🥇','silver'=>'🥈','crypto'=>'₿','cash_currency'=>'💵','property'=>'🏠','car'=>'🚗','valuable'=>'💍','other'=>'📦']; return $icons[$group] ?? '💼'; }
     private function persons() { return ['hamidreza'=>'خودم','samira'=>'همسر','joint'=>'مشترک']; }
@@ -1945,7 +1952,7 @@ final class Hamid_Personal_Accounting {
         $recv_total = $this->table_sum_toman('receivables', 'amount', "status!='paid'");
         $range = $this->current_jalali_month_gregorian_range();
         $income = $this->transaction_sum_toman('income', $wpdb->prepare('gregorian_date BETWEEN %s AND %s', $range[0], $range[1]));
-        $expense = $this->transaction_sum_toman(['expense','loan_installment','recurring_debt','debt_settlement','check_settlement','asset_buy'], $wpdb->prepare('gregorian_date BETWEEN %s AND %s', $range[0], $range[1]));
+        $expense = $this->transaction_sum_toman($this->expense_types(), $wpdb->prepare('gregorian_date BETWEEN %s AND %s', $range[0], $range[1]));
         $net_now = $this->total_balances_toman($balances) + $assets_total - $debts_total;
         $monthly_net = $income - $expense;
         $usd_rate = $this->latest_rate_price('usd');
@@ -2482,7 +2489,7 @@ echo '<section class="hpa-card hpa-assets-list-section"><h2>دارایی‌ها<
         global $wpdb;
         $range=$this->current_jalali_month_gregorian_range();
         $income=$this->transaction_sum_toman('income', $wpdb->prepare('gregorian_date BETWEEN %s AND %s', $range[0], $range[1]));
-        $expense=$this->transaction_sum_toman(['expense','loan_installment','recurring_debt','debt_settlement','check_settlement','asset_buy'], $wpdb->prepare('gregorian_date BETWEEN %s AND %s', $range[0], $range[1]));
+        $expense=$this->transaction_sum_toman($this->expense_types(), $wpdb->prepare('gregorian_date BETWEEN %s AND %s', $range[0], $range[1]));
         $cashflow=$income-$expense; $assets=$this->asset_summary_totals();
         $debts=$this->table_sum_toman('debts','amount',"status!='paid'")+$this->loan_remaining_total_toman()+$this->check_open_total_toman();
         $ratio=$income>0?round($expense*100/$income):0;
@@ -2498,7 +2505,7 @@ echo '<section class="hpa-card hpa-assets-list-section"><h2>دارایی‌ها<
         global $wpdb;
         $range=$this->current_jalali_month_gregorian_range();
         $income=$this->transaction_sum_toman('income', $wpdb->prepare('gregorian_date BETWEEN %s AND %s', $range[0], $range[1]));
-        $expense=$this->transaction_sum_toman(['expense','loan_installment','recurring_debt','debt_settlement','check_settlement'], $wpdb->prepare('gregorian_date BETWEEN %s AND %s', $range[0], $range[1]));
+        $expense=$this->transaction_sum_toman($this->expense_types(), $wpdb->prepare('gregorian_date BETWEEN %s AND %s', $range[0], $range[1]));
         $net_savings=$income-$expense;
         $assets=$this->asset_summary_totals();
         $debt_total=$this->table_sum_toman('debts','amount',"status!='paid'")+$this->loan_remaining_total_toman()+$this->check_open_total_toman();
@@ -2523,8 +2530,8 @@ echo '<section class="hpa-card hpa-assets-list-section"><h2>دارایی‌ها<
     private function report_money_routes() {
         global $wpdb;
         $range=$this->current_jalali_month_gregorian_range();
-        $out_types=['expense','loan_installment','recurring_debt','debt_settlement','check_settlement','asset_buy'];
-        $in_types=['income','asset_sell','receivable_settlement'];
+        $out_types=$this->expense_types();
+        $in_types=['income'];
         $out=[]; foreach($out_types as $t){$out[$t]=$this->transaction_sum_toman($t,$wpdb->prepare('gregorian_date BETWEEN %s AND %s',$range[0],$range[1]));}
         $in=[]; foreach($in_types as $t){$in[$t]=$this->transaction_sum_toman($t,$wpdb->prepare('gregorian_date BETWEEN %s AND %s',$range[0],$range[1]));}
         $labels=$this->transaction_types();
@@ -2534,6 +2541,19 @@ echo '<section class="hpa-card hpa-assets-list-section"><h2>دارایی‌ها<
         echo '</div><div class="hpa-card"><h2>پول از کجا آمد؟</h2>';
         foreach($in as $k=>$v) if($v>0) echo '<div class="hpa-list-row"><b>'.esc_html($labels[$k]??$k).'</b><em class="hpa-positive">'.esc_html($this->fmt_money($v,'toman')).'</em></div>';
         if(!array_filter($in)) echo '<p class="hpa-muted">ورودی قابل گزارشی در ماه جاری نیست.</p>';
+        echo '</div></section>';
+    }
+
+    private function report_financing_summary() {
+        global $wpdb; $range=$this->current_jalali_month_gregorian_range();
+        $labels=$this->transaction_types();
+        $where=$wpdb->prepare('gregorian_date BETWEEN %s AND %s', $range[0], $range[1]);
+        $in_total=0; $out_total=0; $in_html=''; $out_html='';
+        foreach($this->financing_in_types() as $t){ $v=$this->transaction_sum_toman($t, $where); if($v>0){ $in_total+=$v; $in_html.='<div class="hpa-list-row"><b>'.esc_html($labels[$t]??$t).'</b><em class="hpa-positive">'.esc_html($this->fmt_money($v,'toman')).'</em></div>'; } }
+        foreach($this->financing_out_types() as $t){ $v=$this->transaction_sum_toman($t, $where); if($v>0){ $out_total+=$v; $out_html.='<div class="hpa-list-row"><b>'.esc_html($labels[$t]??$t).'</b><em class="hpa-negative">'.esc_html($this->fmt_money($v,'toman')).'</em></div>'; } }
+        echo '<section class="hpa-card hpa-financing-card"><div class="hpa-section-head"><div><h2>جابه‌جایی پول و بازپرداخت‌ها (ماه جاری)</h2><p class="hpa-muted">اینها درآمد یا هزینه نیستند؛ فقط جابه‌جایی پول‌اند (گرفتن/پس‌دادن قرض و وام، خرید/فروش دارایی، وصول طلب) و در «درآمد/هزینهٔ ماه» شمرده نمی‌شوند. روی موجودی حساب اثر می‌گذارند ولی روی «ارزش خالص دارایی» نه.</p></div></div><div class="hpa-two">';
+        echo '<div class="hpa-card hpa-subcard"><h3>ورودی پول (تأمین مالی)</h3>'.($in_html ?: '<p class="hpa-muted">موردی در این ماه نیست.</p>').'<div class="hpa-list-row"><b>جمع ورودی</b><em>'.esc_html($this->fmt_money($in_total,'toman')).'</em></div></div>';
+        echo '<div class="hpa-card hpa-subcard"><h3>خروجی پول (بازپرداخت/خرید دارایی)</h3>'.($out_html ?: '<p class="hpa-muted">موردی در این ماه نیست.</p>').'<div class="hpa-list-row"><b>جمع خروجی</b><em>'.esc_html($this->fmt_money($out_total,'toman')).'</em></div></div>';
         echo '</div></section>';
     }
 
@@ -2555,7 +2575,7 @@ echo '<section class="hpa-card hpa-assets-list-section"><h2>دارایی‌ها<
 
     private function report_essential_expenses() {
         global $wpdb; $range=$this->current_jalali_month_gregorian_range();
-        $rows=$wpdb->get_results($wpdb->prepare("SELECT c.is_essential, t.amount, t.currency FROM {$this->tables['transactions']} t LEFT JOIN {$this->tables['categories']} c ON c.id=t.category_id WHERE t.status!='cancelled' AND t.type IN ('expense','loan_installment','recurring_debt','debt_settlement','check_settlement') AND t.gregorian_date BETWEEN %s AND %s", $range[0],$range[1]));
+        $rows=$wpdb->get_results($wpdb->prepare("SELECT c.is_essential, t.amount, t.currency FROM {$this->tables['transactions']} t LEFT JOIN {$this->tables['categories']} c ON c.id=t.category_id WHERE t.status!='cancelled' AND t.type IN ('expense','recurring_debt') AND t.gregorian_date BETWEEN %s AND %s", $range[0],$range[1]));
         $ess=0; $non=0; foreach($rows as $r){ if((int)($r->is_essential ?? 1)) $ess+=$this->amount_to_toman($r->amount,$r->currency); else $non+=$this->amount_to_toman($r->amount,$r->currency); }
         echo '<section class="hpa-card"><h2>هزینه‌های ضروری و غیرضروری ماه</h2><div class="hpa-metric-row"><span>ضروری</span><strong>'.esc_html($this->fmt_money($ess,'toman')).'</strong><span>غیرضروری</span><strong>'.esc_html($this->fmt_money($non,'toman')).'</strong></div><p class="hpa-muted">ضروری/غیرضروری بودن از تنظیمات موضوعات تراکنش خوانده می‌شود.</p></section>';
     }
@@ -2571,7 +2591,7 @@ echo '<section class="hpa-card hpa-assets-list-section"><h2>دارایی‌ها<
     private function report_places_largest_balance() {
         global $wpdb; $range=$this->current_jalali_month_gregorian_range();
         echo '<section class="hpa-three"><div class="hpa-card"><h2>بیشترین محل‌های خرج</h2>';
-        $places=$wpdb->get_results($wpdb->prepare("SELECT transaction_place, SUM(amount) s, currency FROM {$this->tables['transactions']} WHERE transaction_place<>'' AND type IN ('expense','asset_buy','loan_installment','recurring_debt','check_settlement') AND status!='cancelled' AND gregorian_date BETWEEN %s AND %s GROUP BY transaction_place ORDER BY s DESC LIMIT 8",$range[0],$range[1]));
+        $places=$wpdb->get_results($wpdb->prepare("SELECT transaction_place, SUM(amount) s, currency FROM {$this->tables['transactions']} WHERE transaction_place<>'' AND type IN ('expense','recurring_debt') AND status!='cancelled' AND gregorian_date BETWEEN %s AND %s GROUP BY transaction_place ORDER BY s DESC LIMIT 8",$range[0],$range[1]));
         foreach($places as $r) echo '<div class="hpa-list-row"><b>'.esc_html($r->transaction_place).'</b><em>'.esc_html($this->fmt_money($r->s,$r->currency)).'</em></div>'; if(!$places) echo '<p class="hpa-muted">محل خرج ثبت نشده است.</p>';
         echo '</div><div class="hpa-card"><h2>بزرگ‌ترین تراکنش‌های ماه</h2>';
         $big=$wpdb->get_results($wpdb->prepare("SELECT * FROM {$this->tables['transactions']} WHERE status!='cancelled' AND gregorian_date BETWEEN %s AND %s ORDER BY amount DESC LIMIT 10",$range[0],$range[1]));
@@ -2582,7 +2602,7 @@ echo '<section class="hpa-card hpa-assets-list-section"><h2>دارایی‌ها<
     private function account_balance_trend_svg() {
         global $wpdb; $accounts=$this->get_accounts(); if(!$accounts) return '<p class="hpa-muted">حسابی ثبت نشده است.</p>';
         $out='<div class="hpa-mini-trends">'; $months=$this->last_jalali_month_ranges(6);
-        foreach($accounts as $a){ $vals=[]; foreach($months as $m){ $in=$this->transaction_sum_toman(['income','asset_sell','receivable_settlement'], $wpdb->prepare('account_id=%d AND gregorian_date<=%s',$a->id,$m['end'])); $outg=$this->transaction_sum_toman(['expense','loan_installment','recurring_debt','debt_settlement','check_settlement','asset_buy'], $wpdb->prepare('account_id=%d AND gregorian_date<=%s',$a->id,$m['end'])); $vals[]=$this->amount_to_toman($a->opening_balance,$a->currency)+$in-$outg; } $max=max($vals)?:1; $bars=''; foreach($vals as $v){$bars.='<span style="height:'.esc_attr(max(6,round($v*80/$max))).'px"></span>';} $out.='<div class="hpa-trend-row"><b>'.esc_html($a->name).'</b><div class="hpa-spark">'.$bars.'</div></div>'; }
+        foreach($accounts as $a){ $vals=[]; foreach($months as $m){ $in=$this->transaction_sum_toman($this->cash_in_types(), $wpdb->prepare('account_id=%d AND gregorian_date<=%s',$a->id,$m['end'])); $outg=$this->transaction_sum_toman($this->cash_out_types(), $wpdb->prepare('account_id=%d AND gregorian_date<=%s',$a->id,$m['end'])); $vals[]=$this->amount_to_toman($a->opening_balance,$a->currency)+$in-$outg; } $max=max($vals)?:1; $bars=''; foreach($vals as $v){$bars.='<span style="height:'.esc_attr(max(6,round($v*80/$max))).'px"></span>';} $out.='<div class="hpa-trend-row"><b>'.esc_html($a->name).'</b><div class="hpa-spark">'.$bars.'</div></div>'; }
         return $out.'</div>';
     }
 
@@ -2681,7 +2701,7 @@ echo '<section class="hpa-card hpa-assets-list-section"><h2>دارایی‌ها<
     private function report_month_comparison() {
         $ranges=$this->last_jalali_month_ranges(2); if(count($ranges)<2)return; global $wpdb; $cur=$ranges[1]; $prev=$ranges[0];
         $ci=$this->transaction_sum_toman('income',$wpdb->prepare('gregorian_date BETWEEN %s AND %s',$cur['start'],$cur['end'])); $pi=$this->transaction_sum_toman('income',$wpdb->prepare('gregorian_date BETWEEN %s AND %s',$prev['start'],$prev['end']));
-        $ce=$this->transaction_sum_toman(['expense','loan_installment','recurring_debt','debt_settlement','check_settlement','asset_buy'],$wpdb->prepare('gregorian_date BETWEEN %s AND %s',$cur['start'],$cur['end'])); $pe=$this->transaction_sum_toman(['expense','loan_installment','recurring_debt','debt_settlement','check_settlement','asset_buy'],$wpdb->prepare('gregorian_date BETWEEN %s AND %s',$prev['start'],$prev['end']));
+        $ce=$this->transaction_sum_toman($this->expense_types(),$wpdb->prepare('gregorian_date BETWEEN %s AND %s',$cur['start'],$cur['end'])); $pe=$this->transaction_sum_toman($this->expense_types(),$wpdb->prepare('gregorian_date BETWEEN %s AND %s',$prev['start'],$prev['end']));
         $pct=function($a,$b){return $b>0?round(($a-$b)*100/$b):0;};
         echo '<section class="hpa-card"><h2>مقایسه ماه جاری با ماه قبل</h2><div class="hpa-metric-row"><span>تغییر درآمد</span><strong class="'.($ci>=$pi?'hpa-positive':'hpa-negative').'">'.esc_html($pct($ci,$pi)).'%</strong><span>تغییر هزینه</span><strong class="'.($ce<=$pe?'hpa-positive':'hpa-negative').'">'.esc_html($pct($ce,$pe)).'%</strong><span>پس‌انداز خالص</span><strong>'.esc_html($this->fmt_money($ci-$ce,'toman')).'</strong></div></section>';
     }
@@ -2703,7 +2723,7 @@ echo '<section class="hpa-card hpa-assets-list-section"><h2>دارایی‌ها<
         $this->report_financial_overview_text();
         $balances=$this->calculate_balances();
         $income=$this->transaction_sum_toman('income');
-        $expense=$this->transaction_sum_toman(['expense','loan_installment','recurring_debt','debt_settlement','check_settlement','asset_buy']);
+        $expense=$this->transaction_sum_toman($this->expense_types());
         $asset_summary=$this->asset_summary_totals();
         $assets_total=$asset_summary['current'];
         $debts_total=$this->table_sum_toman('debts', 'amount', "status!='paid'") + $this->loan_remaining_total_toman() + $this->check_open_total_toman();
@@ -2721,6 +2741,7 @@ echo '<section class="hpa-card hpa-assets-list-section"><h2>دارایی‌ها<
         $this->report_money_routes();
         $this->report_essential_expenses();
         $this->report_item_spending();
+        $this->report_financing_summary();
         $this->report_person_transfers_shared();
         echo '<section class="hpa-two"><div class="hpa-card"><h2>نمودار هزینه‌ها بر اساس موضوع</h2>'.$this->expense_chart(true).'</div><div class="hpa-card"><h2>درآمد و هزینه ۶ ماه اخیر</h2>'.$this->monthly_svg_chart().'</div></section>';
         echo '<section class="hpa-two"><div class="hpa-card"><h2>گزارش حساب‌ها</h2>';
@@ -2730,7 +2751,7 @@ echo '<section class="hpa-card hpa-assets-list-section"><h2>دارایی‌ها<
         echo '</div><div class="hpa-card"><h2>گزارش بر اساس شخص</h2>';
         foreach($this->persons() as $key=>$label){
             $pin=$this->transaction_sum_toman('income', $wpdb->prepare('person_key=%s', $key));
-            $pex=$this->transaction_sum_toman(['expense','loan_installment','recurring_debt','debt_settlement','check_settlement','asset_buy'], $wpdb->prepare('person_key=%s', $key));
+            $pex=$this->transaction_sum_toman($this->expense_types(), $wpdb->prepare('person_key=%s', $key));
             $pas_summary=$this->asset_summary_totals($wpdb->prepare('person_key=%s', $key));
             $pas=$pas_summary['current'];
             echo '<div class="hpa-list-row"><span class="hpa-person-pill">'.esc_html($label).'</span><b>درآمد: '.esc_html($this->fmt_money($pin,'toman')).'<br>هزینه: '.esc_html($this->fmt_money($pex,'toman')).'</b><em>دارایی فعلی: '.esc_html($this->fmt_money($pas,'toman')).'</em></div>';
@@ -2767,7 +2788,7 @@ echo '<section class="hpa-card hpa-assets-list-section"><h2>دارایی‌ها<
         global $wpdb;
         $range=$this->current_jalali_month_gregorian_range();
         $income=$this->transaction_sum_toman('income', $wpdb->prepare('gregorian_date BETWEEN %s AND %s', $range[0], $range[1]));
-        $expense=$this->transaction_sum_toman(['expense','loan_installment','recurring_debt','debt_settlement','check_settlement','asset_buy'], $wpdb->prepare('gregorian_date BETWEEN %s AND %s', $range[0], $range[1]));
+        $expense=$this->transaction_sum_toman($this->expense_types(), $wpdb->prepare('gregorian_date BETWEEN %s AND %s', $range[0], $range[1]));
         $net=$income-$expense;
         echo '<section class="hpa-two"><div class="hpa-card"><h2>گزارش جریان نقدی ماه شمسی</h2><div class="hpa-list-row"><b>ورودی ماه</b><em class="hpa-positive">'.esc_html($this->fmt_money($income,'toman')).'</em></div><div class="hpa-list-row"><b>خروجی ماه</b><em class="hpa-negative">'.esc_html($this->fmt_money($expense,'toman')).'</em></div><div class="hpa-list-row"><b>خالص جریان نقدی</b><em class="'.($net>=0?'hpa-positive':'hpa-negative').'">'.esc_html(($net>=0?'+':'-').$this->fmt_money(abs($net),'toman')).'</em></div></div>';
         $events=[];
@@ -3325,7 +3346,7 @@ echo '<section class="hpa-card hpa-assets-list-section"><h2>دارایی‌ها<
 
     private function expense_chart($legend=false, $current_month_only=false, $percent_list=false) {
         global $wpdb;
-        $where = "t.type IN ('expense','loan_installment','recurring_debt','debt_settlement','check_settlement','asset_buy') AND t.status!='cancelled'";
+        $where = "t.type IN ('expense','recurring_debt') AND t.status!='cancelled'";
         if ($current_month_only) {
             $range = $this->current_jalali_month_gregorian_range();
             $where .= $wpdb->prepare(' AND t.gregorian_date BETWEEN %s AND %s', $range[0], $range[1]);
@@ -3383,8 +3404,8 @@ echo '<section class="hpa-card hpa-assets-list-section"><h2>دارایی‌ها<
             $jstart = sprintf('%04d/%02d/01', $y, $m);
             $jend = sprintf('%04d/%02d/%02d', $y, $m, $last);
             $start = $this->jalali_to_gregorian_date($jstart); $end = $this->jalali_to_gregorian_date($jend);
-            $inc_rows=$wpdb->get_results($wpdb->prepare("SELECT amount,currency FROM {$this->tables['transactions']} WHERE type IN ('income','asset_sell','receivable_settlement') AND status!='cancelled' AND gregorian_date BETWEEN %s AND %s",$start,$end));
-            $exp_rows=$wpdb->get_results($wpdb->prepare("SELECT amount,currency FROM {$this->tables['transactions']} WHERE type IN ('expense','loan_installment','recurring_debt','debt_settlement','check_settlement','asset_buy') AND status!='cancelled' AND gregorian_date BETWEEN %s AND %s",$start,$end));
+            $inc_rows=$wpdb->get_results($wpdb->prepare("SELECT amount,currency FROM {$this->tables['transactions']} WHERE type='income' AND status!='cancelled' AND gregorian_date BETWEEN %s AND %s",$start,$end));
+            $exp_rows=$wpdb->get_results($wpdb->prepare("SELECT amount,currency FROM {$this->tables['transactions']} WHERE type IN ('expense','recurring_debt') AND status!='cancelled' AND gregorian_date BETWEEN %s AND %s",$start,$end));
             $data[]=[$months[$m] ?? (string)$m,$this->rows_sum_toman($inc_rows),$this->rows_sum_toman($exp_rows)];
         }
         $max=max(1, ...array_map(function($d){ return max($d[1],$d[2]); },$data));

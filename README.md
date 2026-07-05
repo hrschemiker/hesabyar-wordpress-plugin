@@ -31,10 +31,11 @@ Add it to a page with:
 - **Rates** via the built-in TGJU engine, plus manual entry.
 - Jalali calendar everywhere, soft-delete recycle bin, optional PIN lock.
 
-## What's new in 3.14.0
+## What's new in 3.15.0
 
+- **No double-counted expenses.** Repaying a debt/loan principal, settling cheques, and buying assets are now **financing (money movement)**, not **expense** — symmetric with borrowing not being income. Borrow money, spend it (recorded as a normal expense), then repay the debt, and the repayment is no longer counted again as an expense. A new **«جابه‌جایی پول و بازپرداخت‌ها»** report shows these movements separately. Balances and net worth are unchanged.
 - **Borrowing is not income.** Recording a debt or loan against an account auto-creates a «قرض/وام» transaction that raises the account balance but is **never** counted as income. Person-to-person transfers are likewise excluded from income.
-- **Per-item prices.** Add named line-items with prices to any transaction (independent of the total), and see a new **«خرج به تفکیک قلم»** report of monthly spend per item.
+- **Per-item prices.** Add named line-items with prices to any transaction (independent of the total), and see a **«خرج به تفکیک قلم»** report of monthly spend per item.
 - **Multi-tag entry** (press Enter to add several) and a collapsed, newest-first journal with a «show all» button.
 - Full desktop-app sync (below).
 
