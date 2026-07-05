@@ -31,6 +31,10 @@ Add it to a page with:
 - **Rates** via the built-in TGJU engine, plus manual entry.
 - Jalali calendar everywhere, soft-delete recycle bin, optional PIN lock.
 
+## What's new in 3.16.0
+
+- **Archive (close a period).** Settings → **بایگانی**: snapshot selected data groups (transactions, accounts, assets, simple debts, other liabilities, receivables, or everything) and reset their figures to zero to start a new period. Open (unsettled) obligations are preserved; each archive can be exported to **PDF**.
+
 ## What's new in 3.15.0
 
 - **No double-counted expenses.** Repaying a debt/loan principal, settling cheques, and buying assets are now **financing (money movement)**, not **expense** — symmetric with borrowing not being income. Borrow money, spend it (recorded as a normal expense), then repay the debt, and the repayment is no longer counted again as an expense. A new **«جابه‌جایی پول و بازپرداخت‌ها»** report shows these movements separately. Balances and net worth are unchanged.

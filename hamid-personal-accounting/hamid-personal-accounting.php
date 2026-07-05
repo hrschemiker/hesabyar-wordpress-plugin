@@ -2,7 +2,7 @@
 /**
  * Plugin Name: HesabYar — Personal Accounting
  * Description: افزونه حسابداری شخصی فارسی با حساب‌ها، تراکنش‌ها، طلب و بدهی، دارایی‌ها، گزارش و نمودار سبک با رابط کاربری مدرن فارسی. دارای اتصال دوطرفه به نرم‌افزار دسکتاپ حساب‌یار.
- * Version: 3.15.0
+ * Version: 3.16.0
  * Author: hrschemiker
  * Text Domain: hamid-personal-accounting
  */
@@ -10,7 +10,7 @@
 if (!defined('ABSPATH')) { exit; }
 
 final class Hamid_Personal_Accounting {
-    const VERSION = '3.15.0';
+    const VERSION = '3.16.0';
     const ROLE = 'personal_finance_manager';
     const CAP = 'hpa_manage_accounting';
     const AUTHORIZED_EMAIL = 'hrschemiker@gmail.com';
@@ -47,6 +47,7 @@ final class Hamid_Personal_Accounting {
             'transaction_splits' => $p . 'transaction_splits',
             'transaction_items' => $p . 'transaction_items',
             'deleted_items' => $p . 'deleted_items',
+            'archives' => $p . 'archives',
         ];
         add_shortcode('hamid_personal_accounting', [$this, 'shortcode']);
         add_action('wp_enqueue_scripts', [$this, 'assets']);
@@ -81,6 +82,9 @@ final class Hamid_Personal_Accounting {
         add_action('admin_post_hpa_restore_deleted_item', [$this, 'restore_deleted_item']);
         add_action('admin_post_hpa_permanent_delete_item', [$this, 'permanent_delete_item']);
         add_action('admin_post_hpa_reopen_account', [$this, 'reopen_account']);
+        add_action('admin_post_hpa_save_archive', [$this, 'save_archive']);
+        add_action('admin_post_hpa_delete_archive', [$this, 'delete_archive']);
+        add_action('admin_post_hpa_archive_report', [$this, 'archive_report']);
         add_action('hpa_daily_rate_update', [$this, 'fetch_rates_from_tgju']);
         add_action('init', [$this, 'maybe_upgrade']);
         add_filter('show_admin_bar', [$this, 'maybe_hide_admin_bar']);
@@ -426,6 +430,17 @@ final class Hamid_Personal_Accounting {
             gregorian_date DATE NULL,
             created_at DATETIME NOT NULL,
             PRIMARY KEY(id), KEY transaction_id(transaction_id), KEY name(name), KEY gregorian_date(gregorian_date)
+        ) $charset;");
+        dbDelta("CREATE TABLE {$this->tables['archives']} (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            title VARCHAR(190) NULL,
+            scope LONGTEXT NULL,
+            summary LONGTEXT NULL,
+            data LONGTEXT NULL,
+            jalali_date VARCHAR(12) NULL,
+            gregorian_date DATE NULL,
+            created_at DATETIME NOT NULL,
+            PRIMARY KEY(id)
         ) $charset;");
         dbDelta("CREATE TABLE {$this->tables['deleted_items']} (
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -1705,7 +1720,7 @@ final class Hamid_Personal_Accounting {
     public function settings_page() {
         $settings = get_option(self::OPTION, []); $roles = wp_roles()->roles;
         ?>
-        <div class="wrap hpa-admin-wrap" dir="rtl"><h1>تنظیمات حسابدار شخصی</h1><?php $admin_tab = isset($_GET['hpa_admin_tab']) ? sanitize_key($_GET['hpa_admin_tab']) : 'settings'; ?><h2 class="nav-tab-wrapper"><a class="nav-tab <?php echo $admin_tab==='settings'?'nav-tab-active':''; ?>" href="<?php echo esc_url(add_query_arg(['page'=>'hpa-settings','hpa_admin_tab'=>'settings'], admin_url('options-general.php'))); ?>">تنظیمات</a><a class="nav-tab <?php echo $admin_tab==='deleted'?'nav-tab-active':''; ?>" href="<?php echo esc_url(add_query_arg(['page'=>'hpa-settings','hpa_admin_tab'=>'deleted'], admin_url('options-general.php'))); ?>">حذف‌شده‌ها</a></h2><?php if($admin_tab==='deleted'){ $this->admin_deleted_items_panel(); echo '</div>'; return; } ?>
+        <div class="wrap hpa-admin-wrap" dir="rtl"><h1>تنظیمات حسابدار شخصی</h1><?php $admin_tab = isset($_GET['hpa_admin_tab']) ? sanitize_key($_GET['hpa_admin_tab']) : 'settings'; ?><h2 class="nav-tab-wrapper"><a class="nav-tab <?php echo $admin_tab==='settings'?'nav-tab-active':''; ?>" href="<?php echo esc_url(add_query_arg(['page'=>'hpa-settings','hpa_admin_tab'=>'settings'], admin_url('options-general.php'))); ?>">تنظیمات</a><a class="nav-tab <?php echo $admin_tab==='deleted'?'nav-tab-active':''; ?>" href="<?php echo esc_url(add_query_arg(['page'=>'hpa-settings','hpa_admin_tab'=>'deleted'], admin_url('options-general.php'))); ?>">حذف‌شده‌ها</a><a class="nav-tab <?php echo $admin_tab==='archive'?'nav-tab-active':''; ?>" href="<?php echo esc_url(add_query_arg(['page'=>'hpa-settings','hpa_admin_tab'=>'archive'], admin_url('options-general.php'))); ?>">بایگانی</a></h2><?php if($admin_tab==='deleted'){ $this->admin_deleted_items_panel(); echo '</div>'; return; } if($admin_tab==='archive'){ $this->admin_archive_panel(); echo '</div>'; return; } ?>
         <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
             <input type="hidden" name="action" value="hpa_save_settings"><?php wp_nonce_field(self::NONCE,'hpa_nonce'); ?>
             <table class="form-table" role="presentation"><tbody>
@@ -1792,6 +1807,152 @@ final class Hamid_Personal_Accounting {
             'app_sync_enabled'=>isset($_POST['app_sync_enabled']) ? 1 : 0,
         ], false);
         wp_safe_redirect(add_query_arg('updated','true', wp_get_referer())); exit;
+    }
+
+    // ================= ARCHIVE (snapshot + reset to zero) =================
+    private function archive_groups() {
+        return [
+            'tx' => 'تراکنش‌ها',
+            'accounts' => 'حساب‌ها',
+            'assets' => 'دارایی‌ها',
+            'qard' => 'قرض‌ها (بدهی ساده)',
+            'liabilities' => 'بدهی‌ها (وام، چک، تکرارشونده)',
+            'receivables' => 'طلب‌ها',
+        ];
+    }
+    private function rows_sum_toman_arr($rows, $field='amount') {
+        $sum=0; foreach((array)$rows as $r){ $r=(array)$r; $sum += $this->amount_to_toman($r[$field] ?? 0, $r['currency'] ?? 'toman'); } return $sum;
+    }
+    private function redirect_settings_archive() {
+        wp_safe_redirect(add_query_arg(['page'=>'hpa-settings','hpa_admin_tab'=>'archive','archived'=>'1'], admin_url('options-general.php'))); exit;
+    }
+    public function save_archive() {
+        if ( ! $this->is_authorized_user() ) wp_die('دسترسی غیرمجاز.', '', ['response'=>403]);
+        check_admin_referer(self::NONCE, 'hpa_nonce');
+        global $wpdb; $T=$this->tables; $groups=$this->archive_groups();
+        $selected=[];
+        if (!empty($_POST['group_all'])) $selected=array_keys($groups);
+        else foreach($groups as $k=>$v) if (!empty($_POST['group_'.$k])) $selected[]=$k;
+        if (!$selected) $this->redirect_settings_archive();
+        $G=array_flip($selected);
+        $title=sanitize_text_field(wp_unslash($_POST['archive_title'] ?? '')) ?: ('بایگانی '.$this->today_jalali());
+        $snap=[]; $summary=[];
+        $add=function($table,$rows) use (&$snap){ if($rows) $snap[$table]=array_merge($snap[$table]??[], $rows); };
+        $now=current_time('mysql');
+        $wipeAllTx = isset($G['tx']) || isset($G['accounts']);
+        if ($wipeAllTx) {
+            $txs=$wpdb->get_results("SELECT * FROM {$T['transactions']}", ARRAY_A);
+            if (isset($G['tx'])) $summary['tx']=['label'=>$groups['tx'],'count'=>count($txs),'total'=>$this->transaction_sum_toman('income')];
+            if (isset($G['accounts'])) {
+                $accts=$wpdb->get_results("SELECT * FROM {$T['accounts']}", ARRAY_A);
+                $balances=$this->calculate_balances(); $totalBal=0;
+                foreach($accts as $a) $totalBal += $this->amount_to_toman($balances[$a['id']] ?? 0, $a['currency']);
+                $summary['accounts']=['label'=>$groups['accounts'],'count'=>count($accts),'total'=>$totalBal];
+                $add($T['accounts'],$accts);
+            }
+            $add($T['transactions'],$txs);
+            $add($T['transaction_items'],$wpdb->get_results("SELECT * FROM {$T['transaction_items']}", ARRAY_A));
+            $add($T['transaction_splits'],$wpdb->get_results("SELECT * FROM {$T['transaction_splits']}", ARRAY_A));
+            $wpdb->query("DELETE FROM {$T['transactions']}"); $wpdb->query("DELETE FROM {$T['transaction_items']}"); $wpdb->query("DELETE FROM {$T['transaction_splits']}");
+            if (isset($G['accounts'])) $wpdb->query("DELETE FROM {$T['accounts']}");
+            else $wpdb->query($wpdb->prepare("UPDATE {$T['accounts']} SET opening_balance=0, updated_at=%s", $now));
+        }
+        if (isset($G['assets'])) {
+            $assets=$wpdb->get_results("SELECT * FROM {$T['assets']}", ARRAY_A); $cur=0;
+            foreach($assets as $a){ $v=$this->asset_valuation((object)$a); $cur += $v['current_total']; }
+            $summary['assets']=['label'=>$groups['assets'],'count'=>count($assets),'total'=>$cur];
+            $add($T['assets'],$assets); $add($T['asset_files'],$wpdb->get_results("SELECT * FROM {$T['asset_files']}", ARRAY_A)); $add($T['goals'],$wpdb->get_results("SELECT * FROM {$T['goals']}", ARRAY_A));
+            $add($T['transactions'],$wpdb->get_results("SELECT * FROM {$T['transactions']} WHERE type IN ('asset_buy','asset_sell')", ARRAY_A));
+            $wpdb->query("DELETE FROM {$T['assets']}"); $wpdb->query("DELETE FROM {$T['asset_files']}"); $wpdb->query("DELETE FROM {$T['goals']}"); $wpdb->query("DELETE FROM {$T['transactions']} WHERE type IN ('asset_buy','asset_sell')");
+        }
+        if (isset($G['qard'])) {
+            $paid=$wpdb->get_results("SELECT * FROM {$T['debts']} WHERE status='paid'", ARRAY_A);
+            $summary['qard']=['label'=>$groups['qard'],'count'=>count($paid),'total'=>$this->rows_sum_toman_arr($paid)];
+            $add($T['debts'],$paid); $ids=wp_list_pluck($paid,'id');
+            if ($ids){ $in=implode(',',array_map('intval',$ids)); $add($T['transactions'],$wpdb->get_results("SELECT * FROM {$T['transactions']} WHERE debt_id IN ($in) AND type IN ('debt_incur','debt_settlement')", ARRAY_A)); $wpdb->query("DELETE FROM {$T['transactions']} WHERE debt_id IN ($in) AND type IN ('debt_incur','debt_settlement')"); $wpdb->query("DELETE FROM {$T['debts']} WHERE status='paid'"); }
+        }
+        if (isset($G['liabilities'])) {
+            $liaCount=0; $liaTotal=0;
+            $loansPaid=$wpdb->get_results("SELECT * FROM {$T['loans']} WHERE status='paid'", ARRAY_A); $loanIds=wp_list_pluck($loansPaid,'id');
+            $add($T['loans'],$loansPaid); $liaCount+=count($loansPaid); $liaTotal += $this->rows_sum_toman_arr($loansPaid,'principal_amount');
+            if ($loanIds){ $in=implode(',',array_map('intval',$loanIds)); $add($T['loan_installments'],$wpdb->get_results("SELECT * FROM {$T['loan_installments']} WHERE loan_id IN ($in)", ARRAY_A)); $add($T['transactions'],$wpdb->get_results("SELECT * FROM {$T['transactions']} WHERE source_loan_id IN ($in) AND type IN ('debt_incur','loan_installment')", ARRAY_A)); $wpdb->query("DELETE FROM {$T['transactions']} WHERE source_loan_id IN ($in) AND type IN ('debt_incur','loan_installment')"); $wpdb->query("DELETE FROM {$T['loan_installments']} WHERE loan_id IN ($in)"); $wpdb->query("DELETE FROM {$T['loans']} WHERE status='paid'"); }
+            $checksPaid=$wpdb->get_results("SELECT * FROM {$T['checks']} WHERE status='paid'", ARRAY_A); $checkIds=wp_list_pluck($checksPaid,'id');
+            $add($T['checks'],$checksPaid); $liaCount+=count($checksPaid);
+            foreach($checksPaid as $c) $liaTotal += $this->amount_to_toman(((float)$c['amount_each'])*max(1,(int)$c['check_count']), $c['currency']);
+            if ($checkIds){ $in=implode(',',array_map('intval',$checkIds)); $add($T['transactions'],$wpdb->get_results("SELECT * FROM {$T['transactions']} WHERE check_id IN ($in) AND type='check_settlement'", ARRAY_A)); $wpdb->query("DELETE FROM {$T['transactions']} WHERE check_id IN ($in) AND type='check_settlement'"); $wpdb->query("DELETE FROM {$T['checks']} WHERE status='paid'"); }
+            $recInactive=$wpdb->get_results("SELECT * FROM {$T['recurring']} WHERE status!='active'", ARRAY_A); $recIds=wp_list_pluck($recInactive,'id');
+            $add($T['recurring'],$recInactive); $liaCount+=count($recInactive);
+            if ($recIds){ $in=implode(',',array_map('intval',$recIds)); $add($T['transactions'],$wpdb->get_results("SELECT * FROM {$T['transactions']} WHERE recurring_id IN ($in) AND type='recurring_debt'", ARRAY_A)); $wpdb->query("DELETE FROM {$T['transactions']} WHERE recurring_id IN ($in) AND type='recurring_debt'"); $wpdb->query("DELETE FROM {$T['recurring']} WHERE status!='active'"); }
+            $summary['liabilities']=['label'=>$groups['liabilities'],'count'=>$liaCount,'total'=>$liaTotal];
+        }
+        if (isset($G['receivables'])) {
+            $paid=$wpdb->get_results("SELECT * FROM {$T['receivables']} WHERE status='paid'", ARRAY_A);
+            $summary['receivables']=['label'=>$groups['receivables'],'count'=>count($paid),'total'=>$this->rows_sum_toman_arr($paid)];
+            $add($T['receivables'],$paid); $ids=wp_list_pluck($paid,'id');
+            if ($ids){ $in=implode(',',array_map('intval',$ids)); $add($T['transactions'],$wpdb->get_results("SELECT * FROM {$T['transactions']} WHERE receivable_id IN ($in) AND type='receivable_settlement'", ARRAY_A)); $wpdb->query("DELETE FROM {$T['transactions']} WHERE receivable_id IN ($in) AND type='receivable_settlement'"); $wpdb->query("DELETE FROM {$T['receivables']} WHERE status='paid'"); }
+        }
+        $wpdb->insert($T['archives'], [
+            'title'=>$title,
+            'scope'=>wp_json_encode(array_map(function($k) use ($groups){ return $groups[$k] ?? $k; }, $selected), JSON_UNESCAPED_UNICODE),
+            'summary'=>wp_json_encode($summary, JSON_UNESCAPED_UNICODE), 'data'=>wp_json_encode($snap, JSON_UNESCAPED_UNICODE),
+            'jalali_date'=>$this->today_jalali(), 'gregorian_date'=>date('Y-m-d'), 'created_at'=>$now,
+        ]);
+        $this->redirect_settings_archive();
+    }
+    public function delete_archive() {
+        if ( ! $this->is_authorized_user() ) wp_die('دسترسی غیرمجاز.', '', ['response'=>403]);
+        check_admin_referer(self::NONCE, 'hpa_nonce');
+        global $wpdb; $wpdb->delete($this->tables['archives'], ['id'=>$this->id('id')]);
+        $this->redirect_settings_archive();
+    }
+    public function archive_report() {
+        if ( ! $this->is_authorized_user() ) wp_die('دسترسی غیرمجاز.', '', ['response'=>403]);
+        check_admin_referer(self::NONCE, 'hpa_nonce');
+        global $wpdb;
+        $a=$wpdb->get_row($wpdb->prepare("SELECT * FROM {$this->tables['archives']} WHERE id=%d", $this->id('id')), ARRAY_A);
+        nocache_headers(); header('Content-Type: text/html; charset=utf-8');
+        echo $this->render_archive_report_html($a);
+        exit;
+    }
+    private function render_archive_report_html($a) {
+        $css = esc_url(plugin_dir_url(__FILE__).'assets/css/hpa.css');
+        $styles = '<style>@page{size:A4;margin:14mm}html,body{margin:0}body{font-family:HPAIranSans,Tahoma,sans-serif;direction:rtl;color:#0f172a;padding:16px;background:#fff}h1{font-size:20px;margin:0 0 4px}h2{font-size:15px;margin:18px 0 8px;border-bottom:1px solid #e2e8f0;padding-bottom:5px}p{margin:4px 0;color:#334155}table.rep{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px}table.rep th,table.rep td{border:1px solid #e2e8f0;padding:6px 8px;text-align:right}table.rep th{background:#f1f5f9}.noprint{margin:0 0 14px}.noprint button{padding:9px 16px;border:0;border-radius:10px;background:#4f46e5;color:#fff;font-weight:700;cursor:pointer}@media print{.noprint{display:none!important}}</style>';
+        $head = '<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8"><link rel="stylesheet" href="'.$css.'">'.$styles.'<title>گزارش بایگانی</title></head><body>';
+        $foot = '<script>window.addEventListener("load",function(){setTimeout(function(){try{window.print();}catch(e){}},450);});</script></body></html>';
+        if (!$a) return $head.'<p>بایگانی یافت نشد.</p>'.$foot;
+        $summary=json_decode($a['summary'] ?? '{}', true) ?: []; $data=json_decode($a['data'] ?? '{}', true) ?: []; $scope=json_decode($a['scope'] ?? '[]', true) ?: [];
+        $types=$this->transaction_types(); $T=$this->tables;
+        $body = '<div class="noprint"><button onclick="window.print()">چاپ / ذخیره PDF</button></div>';
+        $body .= '<h1>گزارش بایگانی: '.esc_html($a['title']).'</h1>';
+        $body .= '<p>تاریخ بایگانی: '.esc_html($a['jalali_date']).' — حساب‌یار</p>';
+        $body .= '<p>بخش‌های بایگانی‌شده: '.esc_html(implode('، ',$scope)).'</p>';
+        $body .= '<h2>خلاصه</h2><table class="rep"><thead><tr><th>بخش</th><th>تعداد</th><th>جمع (تومان)</th></tr></thead><tbody>';
+        foreach($summary as $k=>$s){ $body .= '<tr><td>'.esc_html($s['label'] ?? $k).'</td><td>'.esc_html(number_format_i18n((int)($s['count'] ?? 0))).'</td><td>'.esc_html($this->fmt_money($s['total'] ?? 0,'toman')).'</td></tr>'; }
+        $body .= '</tbody></table>';
+        $tbl=function($rows,$heads,$cb){ $h='<table class="rep"><thead><tr>'; foreach($heads as $x) $h.='<th>'.esc_html($x).'</th>'; $h.='</tr></thead><tbody>'; foreach($rows as $r){ $h.='<tr>'; foreach($cb($r) as $c) $h.='<td>'.$c.'</td>'; $h.='</tr>'; } return $h.'</tbody></table>'; };
+        if (!empty($data[$T['transactions']])) $body .= '<h2>تراکنش‌ها ('.number_format_i18n(count($data[$T['transactions']])).')</h2>'.$tbl($data[$T['transactions']],['تاریخ','نوع','مبلغ','توضیح'],function($r){ return [esc_html($r['jalali_date']),esc_html($this->transaction_types()[$r['type']] ?? $r['type']),esc_html($this->fmt_money($r['amount'],$r['currency'])),esc_html(wp_trim_words($r['description'] ?? '',12))]; });
+        if (!empty($data[$T['accounts']])) $body .= '<h2>حساب‌ها ('.number_format_i18n(count($data[$T['accounts']])).')</h2>'.$tbl($data[$T['accounts']],['نام','ارز','موجودی اولیه'],function($r){ return [esc_html($r['name']),esc_html($this->currencies()[$r['currency']] ?? $r['currency']),esc_html($this->fmt_money($r['opening_balance'],$r['currency']))]; });
+        if (!empty($data[$T['assets']])) $body .= '<h2>دارایی‌ها ('.number_format_i18n(count($data[$T['assets']])).')</h2>'.$tbl($data[$T['assets']],['عنوان','گروه','قیمت خرید'],function($r){ return [esc_html($r['title']),esc_html($this->asset_groups()[$r['asset_group']] ?? $r['asset_group']),esc_html($this->fmt_money($r['purchase_price'],$r['currency']))]; });
+        if (!empty($data[$T['debts']])) $body .= '<h2>قرض‌ها ('.number_format_i18n(count($data[$T['debts']])).')</h2>'.$tbl($data[$T['debts']],['شخص','مبلغ','تاریخ'],function($r){ return [esc_html($r['person_name']),esc_html($this->fmt_money($r['amount'],$r['currency'])),esc_html($r['jalali_date'])]; });
+        if (!empty($data[$T['loans']])) $body .= '<h2>وام‌ها ('.number_format_i18n(count($data[$T['loans']])).')</h2>'.$tbl($data[$T['loans']],['عنوان','وام‌دهنده','اصل وام'],function($r){ return [esc_html($r['title']),esc_html($r['lender'] ?: '—'),esc_html($this->fmt_money($r['principal_amount'],$r['currency']))]; });
+        if (!empty($data[$T['checks']])) $body .= '<h2>چک‌ها ('.number_format_i18n(count($data[$T['checks']])).')</h2>'.$tbl($data[$T['checks']],['عنوان','تعداد','مبلغ هر چک'],function($r){ return [esc_html($r['title']),esc_html(number_format_i18n((int)$r['check_count'])),esc_html($this->fmt_money($r['amount_each'],$r['currency']))]; });
+        if (!empty($data[$T['receivables']])) $body .= '<h2>طلب‌ها ('.number_format_i18n(count($data[$T['receivables']])).')</h2>'.$tbl($data[$T['receivables']],['شخص','مبلغ','تاریخ'],function($r){ return [esc_html($r['person_name']),esc_html($this->fmt_money($r['amount'],$r['currency'])),esc_html($r['jalali_date'])]; });
+        return $head.$body.$foot;
+    }
+    private function admin_archive_panel() {
+        global $wpdb; $groups=$this->archive_groups();
+        echo '<h2>بایگانی و شروع دورهٔ جدید</h2><p>بخش‌های انتخابی را بایگانی کن: یک نسخهٔ کامل ذخیره و سپس داده‌ها و اعدادشان صفر می‌شوند. تعهدات باز (بدهی/وام/چک پرداخت‌نشده و طلب وصول‌نشده) پاک نمی‌شوند. بعداً می‌توانی از هر بایگانی خروجی PDF بگیری.</p>';
+        echo '<form method="post" action="'.esc_url(admin_url('admin-post.php')).'"><input type="hidden" name="action" value="hpa_save_archive">';
+        wp_nonce_field(self::NONCE,'hpa_nonce');
+        echo '<p><label>عنوان بایگانی: <input type="text" name="archive_title" placeholder="مثلاً پایان سال ۱۴۰۴" style="min-width:280px"></label></p>';
+        echo '<p><label><input type="checkbox" name="group_all" value="1"> <strong>همه‌چیز</strong></label></p><fieldset style="border:1px solid #ddd;padding:10px 14px;max-width:520px;border-radius:6px">';
+        foreach($groups as $k=>$v) echo '<label style="display:block;margin:6px 0"><input type="checkbox" name="group_'.esc_attr($k).'" value="1"> '.esc_html($v).'</label>';
+        echo '</fieldset><p><button class="button button-primary" onclick="return confirm(\'مطمئنی؟ داده‌های انتخاب‌شده صفر و پاک می‌شوند. یک نسخهٔ بایگانی برای PDF ذخیره می‌ماند. این کار قابل بازگشت خودکار نیست.\')">بایگانی و صفر کردن</button></p></form>';
+        $rows=$wpdb->get_results("SELECT * FROM {$this->tables['archives']} ORDER BY id DESC LIMIT 200");
+        echo '<h3>بایگانی‌های ثبت‌شده</h3><table class="widefat striped"><thead><tr><th>عنوان</th><th>تاریخ</th><th>بخش‌ها</th><th>عملیات</th></tr></thead><tbody>';
+        if(!$rows) echo '<tr><td colspan="4">هنوز بایگانی‌ای ثبت نشده است.</td></tr>';
+        foreach($rows as $r){ $scope=json_decode($r->scope,true) ?: []; $pdf=wp_nonce_url(admin_url('admin-post.php?action=hpa_archive_report&id='.(int)$r->id), self::NONCE,'hpa_nonce'); $del=wp_nonce_url(admin_url('admin-post.php?action=hpa_delete_archive&id='.(int)$r->id), self::NONCE,'hpa_nonce'); echo '<tr><td>'.esc_html($r->title).'</td><td>'.esc_html($r->jalali_date).'</td><td>'.esc_html(implode('، ',$scope)).'</td><td><a class="button" href="'.esc_url($pdf).'" target="_blank">دانلود PDF</a> <a class="button" onclick="return confirm(\'حذف این بایگانی؟\')" href="'.esc_url($del).'">حذف</a></td></tr>'; }
+        echo '</tbody></table>';
     }
 
 
