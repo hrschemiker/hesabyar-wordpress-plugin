@@ -2,7 +2,7 @@
 /**
  * Plugin Name: HesabYar — Personal Accounting
  * Description: افزونه حسابداری شخصی فارسی با حساب‌ها، تراکنش‌ها، طلب و بدهی، دارایی‌ها، گزارش و نمودار سبک با رابط کاربری مدرن فارسی. دارای اتصال دوطرفه به نرم‌افزار دسکتاپ حساب‌یار.
- * Version: 3.16.0
+ * Version: 3.17.0
  * Author: hrschemiker
  * Text Domain: hamid-personal-accounting
  */
@@ -10,7 +10,7 @@
 if (!defined('ABSPATH')) { exit; }
 
 final class Hamid_Personal_Accounting {
-    const VERSION = '3.16.0';
+    const VERSION = '3.17.0';
     const ROLE = 'personal_finance_manager';
     const CAP = 'hpa_manage_accounting';
     const AUTHORIZED_EMAIL = 'hrschemiker@gmail.com';
@@ -658,6 +658,22 @@ final class Hamid_Personal_Accounting {
         $curr = $this->currencies();
         $precision = in_array($currency, ['usd','eur','aed','try'], true) ? 2 : 0;
         return number_format_i18n((float)$amount, $precision) . ' ' . ($curr[$currency] ?? esc_html($currency));
+    }
+    // number display: keep the millions digits full-size, shrink the rest + the currency word.
+    // Splits on the actual thousands separator (Persian ٬ / Arabic ، / comma).
+    private function fmt_money_html($amount, $currency='toman') {
+        $full = $this->fmt_money($amount, $currency);
+        $sp = mb_strrpos($full, ' ');
+        $numPart = ($sp !== false) ? mb_substr($full, 0, $sp) : $full;
+        $cur = ($sp !== false) ? mb_substr($full, $sp + 1) : '';
+        $bare = preg_replace('/[-−‎‏]/u', '', $numPart);
+        $groups = preg_split('/[,٬،]/u', $bare);
+        preg_match('/[,٬،]/u', $bare, $sm); $sep = $sm[0] ?? ',';
+        $neg = ((float)$amount < 0) ? '−' : '';
+        $n = count($groups);
+        if ($n >= 3) { $lead = $neg . implode($sep, array_slice($groups, 0, $n - 2)); $rest = $sep . implode($sep, array_slice($groups, $n - 2)); }
+        else { $lead = $neg . $bare; $rest = ''; }
+        return '<span class="hy-lead">'.esc_html($lead).'</span>'.($rest ? '<span class="hy-rest">'.esc_html($rest).'</span>' : '').($cur ? '<span class="hy-cur">'.esc_html($cur).'</span>' : '');
     }
 
     private function amount_to_toman($amount, $currency='toman') {
@@ -2120,14 +2136,14 @@ final class Hamid_Personal_Accounting {
         $gold18_rate = $this->latest_rate_price('gold18');
         $hero_class = $monthly_net >= 0 ? 'hpa-hero-positive' : 'hpa-hero-negative';
         $hero_label = $monthly_net >= 0 ? 'مازاد ماه جاری' : 'کسری ماه جاری';
-        echo '<section class="hpa-hero-finance hpa-hero-finance-fixed '.esc_attr($hero_class).'"><div class="hpa-hero-copy"><span class="hpa-eyebrow">خلاصه مالی ماه جاری</span><h1>'.esc_html($hero_label).': '.esc_html($this->fmt_money(abs($monthly_net),'toman')).'</h1></div><div class="hpa-hero-metrics hpa-hero-market-metrics"><div><small>دلار</small><b>'.esc_html($usd_rate ? $this->fmt_money($usd_rate,'toman') : 'ثبت نشده').'</b></div><div><small>طلای ۱۸ عیار</small><b>'.esc_html($gold18_rate ? $this->fmt_money($gold18_rate,'toman') : 'ثبت نشده').'</b></div></div></section>';
+        echo '<section class="hpa-hero-finance hpa-hero-finance-fixed '.esc_attr($hero_class).'"><div class="hpa-hero-copy"><span class="hpa-eyebrow">خلاصه مالی ماه جاری</span><h1>'.esc_html($hero_label).': <span class="hpa-hero-amount">'.$this->fmt_money_html(abs($monthly_net),'toman').'</span></h1></div><div class="hpa-hero-metrics hpa-hero-market-metrics"><div><small>دلار</small><b>'.esc_html($usd_rate ? $this->fmt_money($usd_rate,'toman') : 'ثبت نشده').'</b></div><div><small>طلای ۱۸ عیار</small><b>'.esc_html($gold18_rate ? $this->fmt_money($gold18_rate,'toman') : 'ثبت نشده').'</b></div></div></section>';
         echo '<section class="hpa-grid hpa-kpis">';
-        $this->kpi('موجودی حساب‌ها', $this->fmt_money($this->total_balances_toman($balances),'toman'), '💶');
-        $this->kpi_asset_current($this->fmt_money($assets_total,'toman'), $asset_profit, $asset_icon);
-        $this->kpi('طلب‌های باز', $this->fmt_money($recv_total,'toman'), '🤝', 'hpa-mobile-hide');
-        $this->kpi('بدهی‌های باز', $this->fmt_money($debts_total,'toman'), '⚠️', 'hpa-mobile-hide');
-        $this->kpi('درآمد ماه', $this->fmt_money($income,'toman'), '📈');
-        $this->kpi('هزینه ماه', $this->fmt_money($expense,'toman'), '📉');
+        $this->kpi('موجودی حساب‌ها', $this->fmt_money_html($this->total_balances_toman($balances),'toman'), '💶');
+        $this->kpi_asset_current($this->fmt_money_html($assets_total,'toman'), $asset_profit, $asset_icon);
+        $this->kpi('طلب‌های باز', $this->fmt_money_html($recv_total,'toman'), '🤝', 'hpa-mobile-hide');
+        $this->kpi('بدهی‌های باز', $this->fmt_money_html($debts_total,'toman'), '⚠️', 'hpa-mobile-hide');
+        $this->kpi('درآمد ماه', $this->fmt_money_html($income,'toman'), '📈');
+        $this->kpi('هزینه ماه', $this->fmt_money_html($expense,'toman'), '📉');
         echo '</section>';
         $this->loan_due_reminders();
         $this->check_due_reminders();
@@ -2157,11 +2173,11 @@ final class Hamid_Personal_Accounting {
         echo '</section>';
     }
 
-    private function kpi($title,$value,$icon,$extra_class='') { echo '<article class="hpa-kpi '.esc_attr($extra_class).'"><span>'.$icon.'</span><small>'.esc_html($title).'</small><strong>'.esc_html($value).'</strong></article>'; }
+    private function kpi($title,$value,$icon,$extra_class='') { echo '<article class="hpa-kpi '.esc_attr($extra_class).'"><span>'.$icon.'</span><small>'.esc_html($title).'</small><strong>'.$value.'</strong></article>'; }
     private function kpi_asset_current($value, $profit, $icon) {
         $class = $profit >= 0 ? 'hpa-profit-positive' : 'hpa-profit-negative';
         $label = ($profit >= 0 ? 'سود: ' : 'زیان: ') . $this->fmt_money(abs($profit), 'toman');
-        echo '<article class="hpa-kpi hpa-kpi-asset-current"><span>'.$icon.'</span><small>ارزش فعلی دارایی‌ها</small><strong>'.esc_html($value).'</strong><em class="'.esc_attr($class).'">'.esc_html($label).'</em></article>';
+        echo '<article class="hpa-kpi hpa-kpi-asset-current"><span>'.$icon.'</span><small>ارزش فعلی دارایی‌ها</small><strong>'.$value.'</strong><em class="'.esc_attr($class).'">'.esc_html($label).'</em></article>';
     }
     private function transaction_flow_class($r) {
         $type = is_object($r) ? ($r->type ?? '') : '';
@@ -2890,11 +2906,11 @@ echo '<section class="hpa-card hpa-assets-list-section"><h2>دارایی‌ها<
         $debts_total=$this->table_sum_toman('debts', 'amount', "status!='paid'") + $this->loan_remaining_total_toman() + $this->check_open_total_toman();
         $recv_total=$this->table_sum_toman('receivables', 'amount', "status!='paid'");
         echo '<section class="hpa-grid hpa-kpis hpa-report-kpis">';
-        $this->kpi('کل درآمد ثبت‌شده',$this->fmt_money($income,'toman'),'📈');
-        $this->kpi('کل هزینه ثبت‌شده',$this->fmt_money($expense,'toman'),'📉');
-        $this->kpi('ارزش فعلی دارایی‌ها',$this->fmt_money($assets_total,'toman'), $asset_summary['profit'] >= 0 ? '<span class="hpa-trend-icon hpa-trend-up">↗</span>' : '<span class="hpa-trend-icon hpa-trend-down">↘</span>');
-        $this->kpi('طلب باز',$this->fmt_money($recv_total,'toman'),'🤝');
-        $this->kpi('بدهی باز',$this->fmt_money($debts_total,'toman'),'⚠️');
+        $this->kpi('کل درآمد ثبت‌شده',$this->fmt_money_html($income,'toman'),'📈');
+        $this->kpi('کل هزینه ثبت‌شده',$this->fmt_money_html($expense,'toman'),'📉');
+        $this->kpi('ارزش فعلی دارایی‌ها',$this->fmt_money_html($assets_total,'toman'), $asset_summary['profit'] >= 0 ? '<span class="hpa-trend-icon hpa-trend-up">↗</span>' : '<span class="hpa-trend-icon hpa-trend-down">↘</span>');
+        $this->kpi('طلب باز',$this->fmt_money_html($recv_total,'toman'),'🤝');
+        $this->kpi('بدهی باز',$this->fmt_money_html($debts_total,'toman'),'⚠️');
         $this->kpi('مانده حساب‌ها',$this->fmt_money($this->total_balances_toman($balances),'toman'),'💳');
         echo '</section>';
         $this->report_month_comparison();
@@ -3649,8 +3665,16 @@ echo '<section class="hpa-card hpa-assets-list-section"><h2>دارایی‌ها<
         $user = wp_authenticate($username, $password);
         if (is_wp_error($user)) return new WP_Error('hpa_login_failed', 'نام کاربری یا رمز عبور سایت درست نیست.', ['status'=>401]);
         if ( strtolower( trim( $user->user_email ) ) !== strtolower( self::AUTHORIZED_EMAIL ) ) return new WP_Error('hpa_forbidden', 'دسترسی مجاز نیست.', array('status'=>403));
-        $token = wp_generate_password(64, false, false);
-        update_user_meta($user->ID, '_hpa_app_token_hash', wp_hash_password($token));
+        $token = wp_generate_password(48, false, false);
+        // Store a plain SHA-256 hash of the token (deterministic — not affected by the
+        // WP 6.8 bcrypt migration), and keep a list so the desktop app AND the phone can
+        // each stay connected instead of overwriting one another's single token.
+        $hash = hash('sha256', $token);
+        $tokens = get_user_meta($user->ID, '_hpa_app_tokens', true);
+        if (!is_array($tokens)) $tokens = [];
+        $tokens[] = $hash;
+        $tokens = array_slice(array_values(array_unique($tokens)), -6); // keep the 6 most recent devices
+        update_user_meta($user->ID, '_hpa_app_tokens', $tokens);
         update_user_meta($user->ID, '_hpa_app_token_created', current_time('mysql'));
         return [
             'ok'=>true,
@@ -3666,12 +3690,23 @@ echo '<section class="hpa-card hpa-assets-list-section"><h2>دارایی‌ها<
         if (!$this->app_sync_enabled()) return new WP_Error('hpa_api_disabled', 'اتصال اپ در تنظیمات افزونه فعال نیست.', ['status'=>403]);
         $auth = (string)$request->get_header('authorization');
         if (!$auth && isset($_SERVER['HTTP_AUTHORIZATION'])) $auth = (string)$_SERVER['HTTP_AUTHORIZATION'];
-        if (!preg_match('/Bearer\s+(.+)/i', $auth, $m)) return new WP_Error('hpa_no_token', 'توکن اپ ارسال نشده است.', ['status'=>401]);
-        $token = trim($m[1]);
-        $users = get_users(['meta_key'=>'_hpa_app_token_hash','number'=>50,'fields'=>['ID']]);
+        if (!$auth && isset($_SERVER['REDIRECT_HTTP_AUTHORIZATION'])) $auth = (string)$_SERVER['REDIRECT_HTTP_AUTHORIZATION'];
+        $token = '';
+        if (preg_match('/Bearer\s+(.+)/i', $auth, $m)) $token = trim($m[1]);
+        if ($token === '') $token = trim((string)$request->get_param('hpa_app_token')); // fallback if the server strips Authorization
+        if ($token === '') return new WP_Error('hpa_no_token', 'توکن اپ ارسال نشده است.', ['status'=>401]);
+        $hash = hash('sha256', $token);
+        // migrate legacy single-hash meta so already-connected devices don't break on update
+        $users = get_users(['meta_key'=>'_hpa_app_tokens','number'=>50,'fields'=>['ID']]);
+        if (empty($users)) $users = get_users(['meta_key'=>'_hpa_app_token_hash','number'=>50,'fields'=>['ID']]);
         foreach($users as $u) {
-            $hash = (string)get_user_meta($u->ID, '_hpa_app_token_hash', true);
-            if ($hash && wp_check_password($token, $hash, $u->ID)) {
+            $tokens = get_user_meta($u->ID, '_hpa_app_tokens', true);
+            $ok = is_array($tokens) && in_array($hash, $tokens, true);
+            if (!$ok) { // legacy fallback (tokens issued before this version)
+                $legacy = (string)get_user_meta($u->ID, '_hpa_app_token_hash', true);
+                $ok = $legacy && wp_check_password($token, $legacy, $u->ID);
+            }
+            if ($ok) {
                 $perm_user = get_userdata($u->ID);
                 if ( !$perm_user || strtolower(trim($perm_user->user_email)) !== strtolower(self::AUTHORIZED_EMAIL) ) {
                     return new WP_Error('hpa_forbidden', 'دسترسی مجاز نیست.', array('status'=>403));

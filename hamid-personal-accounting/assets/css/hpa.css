@@ -680,3 +680,8 @@
 .hpa-main>*{justify-self:stretch}
 .hpa-tab-identity,.hpa-tab-sticky-summary{width:auto;box-sizing:border-box}
 @media(max-width:860px){.hpa-tab-identity{margin-left:0!important;margin-right:0!important}}
+
+/* Number emphasis — millions digits full-size, the rest + currency word smaller */
+.hy-rest{font-size:.60em;font-weight:800;opacity:.92}
+.hy-cur{font-size:.55em;font-weight:700;opacity:.72;margin-right:.28em}
+.hpa-hero-amount .hy-cur{opacity:.85}
