@@ -2,7 +2,7 @@
 /**
  * Plugin Name: HesabYar — Personal Accounting
  * Description: افزونه حسابداری شخصی فارسی با حساب‌ها، تراکنش‌ها، طلب و بدهی، دارایی‌ها، گزارش و نمودار سبک با رابط کاربری مدرن فارسی. دارای اتصال دوطرفه به نرم‌افزار دسکتاپ حساب‌یار.
- * Version: 3.17.0
+ * Version: 3.18.0
  * Author: hrschemiker
  * Text Domain: hamid-personal-accounting
  */
@@ -10,7 +10,7 @@
 if (!defined('ABSPATH')) { exit; }
 
 final class Hamid_Personal_Accounting {
-    const VERSION = '3.17.0';
+    const VERSION = '3.18.0';
     const ROLE = 'personal_finance_manager';
     const CAP = 'hpa_manage_accounting';
     const AUTHORIZED_EMAIL = 'hrschemiker@gmail.com';
@@ -638,6 +638,13 @@ final class Hamid_Personal_Accounting {
 
     private function currencies() { return ['toman'=>'تومان','rial'=>'ریال','usd'=>'دلار','eur'=>'یورو','aed'=>'درهم','try'=>'لیر']; }
     private function account_types() { return ['cash'=>'نقدی','bank'=>'بانکی','credit'=>'اعتباری']; }
+    private function bank_list() { return [['bmi','بانک ملی ایران'],['mellat','بانک ملت'],['tejarat','بانک تجارت'],['bsi','بانک صادرات'],['sepah','بانک سپه'],['bki','بانک کشاورزی'],['maskan','بانک مسکن'],['parsian','بانک پارسیان'],['bpi','بانک پاسارگاد'],['en','بانک اقتصاد نوین'],['sb','بانک سامان'],['sina','بانک سینا'],['shahr','بانک شهر'],['day','بانک دی'],['kar','بانک کارآفرین'],['rb','بانک رفاه کارگران'],['post','پست بانک'],['sarmayeh','بانک سرمایه'],['ansar','بانک انصار'],['tourism','بانک گردشگری'],['edbi','بانک توسعه صادرات'],['bim','بانک صنعت و معدن'],['iz','بانک ایران‌زمین'],['hi','بانک حکمت ایرانیان'],['melal','مؤسسه اعتباری ملل'],['resalat','بانک رسالت'],['mehriran','بانک مهر ایران'],['tt','بانک توسعه تعاون'],['ivbb','بانک ایران‌ونزوئلا'],['me','بانک مهر اقتصاد'],['ghbi','بانک قوامین'],['ba','بانک آینده']]; }
+    private function account_glyphs() { return ['💳','💵','🏦','🐷','💼','🪙','📇','💰','🏠','🎓']; }
+    private function bank_name($code) { foreach($this->bank_list() as $b){ if($b[0]===$code) return $b[1]; } return ''; }
+    private function account_icon_html($icon, $cls='') { $icon = (string)($icon===null?'💳':$icon); if (strpos($icon,'bank:')===0){ $code=preg_replace('/[^a-z0-9]/i','',substr($icon,5)); return '<img class="hpa-bank-logo '.esc_attr($cls).'" src="'.esc_url(plugins_url('assets/img/banks/'.$code.'.png', __FILE__)).'" alt="'.esc_attr($this->bank_name($code)).'">'; } return '<span class="hpa-acc-emoji '.esc_attr($cls).'">'.esc_html($icon).'</span>'; }
+    private function account_icon_text($icon) { $icon=(string)($icon===null?'💳':$icon); return strpos($icon,'bank:')===0 ? '🏦' : $icon; }
+    private function account_type_label($a) { if ($a && isset($a->icon) && strpos((string)$a->icon,'bank:')===0){ $n=$this->bank_name(substr((string)$a->icon,5)); if($n) return $n; } $t=$this->account_types(); return ($a && isset($t[$a->type])) ? $t[$a->type] : 'حساب'; }
+    private function account_icon_picker($current) { $current=(string)($current===null?'💳':$current); $out='<div class="hpa-icon-picker" data-current="'.esc_attr($current).'"><input type="hidden" name="icon" value="'.esc_attr($current).'">'; $out.='<div class="hpa-icon-picker-glyphs">'; foreach($this->account_glyphs() as $g) $out.='<button type="button" class="hpa-icon-opt hpa-icon-opt-glyph'.($current===$g?' is-selected':'').'" data-icon="'.esc_attr($g).'">'.esc_html($g).'</button>'; $out.='</div><div class="hpa-icon-picker-banks">'; foreach($this->bank_list() as $b){ $val='bank:'.$b[0]; $nm=$b[1]; $out.='<button type="button" class="hpa-icon-opt hpa-icon-opt-bank'.($current===$val?' is-selected':'').'" data-icon="'.esc_attr($val).'" title="'.esc_attr($nm).'"><img src="'.esc_url(plugins_url('assets/img/banks/'.$b[0].'.png', __FILE__)).'" alt="'.esc_attr($nm).'"><small>'.esc_html(preg_replace('/^مؤسسه اعتباری /u','',preg_replace('/^بانک /u','',$nm))).'</small></button>'; } $out.='</div></div>'; return $out; }
     private function transaction_types() { return ['income'=>'درآمد','expense'=>'هزینه','loan_installment'=>'پرداخت قسط','recurring_debt'=>'بدهی تکرارشونده','transfer'=>'انتقال بین حساب‌ها','person_transfer'=>'انتقال بین اشخاص','debt_incur'=>'دریافت قرض/وام','debt_settlement'=>'تسویه بدهی','receivable_settlement'=>'تسویه طلب','check_settlement'=>'تسویه چک','asset_buy'=>'خرید دارایی','asset_sell'=>'فروش دارایی']; }
     // طبقه‌بندی حسابداری: فقط مصرف واقعی «هزینه» است. بازپرداخت اصل بدهی/وام، خرید/فروش دارایی و
     // گرفتن/وصول قرض «جابه‌جایی پول (تأمین مالی)» هستند و درآمد یا هزینه حساب نمی‌شوند.
@@ -2086,7 +2093,7 @@ final class Hamid_Personal_Accounting {
 
     private function account_select($name='account_id', $selected=0) {
         $out='<select name="'.esc_attr($name).'"><option value="0">انتخاب حساب</option>';
-        foreach($this->get_accounts() as $a) $out.='<option value="'.esc_attr($a->id).'" '.selected((int)$selected,(int)$a->id,false).'>'.esc_html($a->icon.' '.$a->name.' — '.$this->person_label($a->person_key ?? 'hamidreza')).'</option>';
+        foreach($this->get_accounts() as $a) $out.='<option value="'.esc_attr($a->id).'" '.selected((int)$selected,(int)$a->id,false).'>'.esc_html($this->account_icon_text($a->icon).' '.$a->name.' — '.$this->person_label($a->person_key ?? 'hamidreza')).'</option>';
         return $out.'</select>';
     }
     private function category_select($name='category_id', $type='expense', $selected=0) {
@@ -2149,7 +2156,7 @@ final class Hamid_Personal_Accounting {
         $this->check_due_reminders();
         $this->recurring_due_reminders();
         echo '<section class="hpa-three hpa-dashboard-middle"><div class="hpa-card hpa-dashboard-expenses"><h3>ترکیب هزینه‌ها</h3>'.$this->expense_chart(false, true, true).'</div><div class="hpa-card hpa-dashboard-accounts"><h3>حساب‌ها</h3>';
-        if (!$dashboard_accounts) echo '<p class="hpa-muted">هنوز حسابی ثبت نشده است.</p>'; else foreach($dashboard_accounts as $a) { $account_color = $a->color ?: '#eef2ff'; echo '<div class="hpa-list-row hpa-dashboard-account-row" style="background:'.esc_attr($account_color).'"><span class="hpa-badge">'.esc_html($a->icon).'</span><b>'.esc_html($a->name).'</b><em>'.esc_html($this->fmt_money($balances[$a->id] ?? 0, $a->currency)).'</em></div>'; }
+        if (!$dashboard_accounts) echo '<p class="hpa-muted">هنوز حسابی ثبت نشده است.</p>'; else foreach($dashboard_accounts as $a) { $account_color = $a->color ?: '#eef2ff'; echo '<div class="hpa-list-row hpa-dashboard-account-row" style="background:'.esc_attr($account_color).'"><span class="hpa-badge">'.$this->account_icon_html($a->icon).'</span><b>'.esc_html($a->name).'</b><em>'.esc_html($this->fmt_money($balances[$a->id] ?? 0, $a->currency)).'</em></div>'; }
         echo '</div>'; $this->dashboard_future_obligations_preview(); echo '</section>';
         echo '<section class="hpa-card hpa-recent-card-section"><div class="hpa-section-head"><div><h3>آخرین تراکنش‌ها</h3><p class="hpa-muted">سه تراکنش آخر با جزئیات جمع‌شونده</p></div></div>'; $this->recent_transaction_cards(3); echo '<div class="hpa-more-under"><a class="hpa-btn hpa-btn-ghost hpa-more-btn" href="'.esc_url(add_query_arg('hpa_tab','transactions')).'">نمایش بیشتر</a></div></section>';
     }
@@ -2345,7 +2352,7 @@ final class Hamid_Personal_Accounting {
         foreach($types as $k=>$v) echo '<option value="'.esc_attr($k).'" '.selected($type,$k,false).'>'.esc_html($v).'</option>';
         echo '</select></label><label>واحد پول<select name="currency">';
         foreach(['toman','rial','usd','eur'] as $k) echo '<option value="'.esc_attr($k).'" '.selected($currency,$k,false).'>'.esc_html($curr[$k]).'</option>';
-        echo '</select></label><label>موجودی اولیه<input name="opening_balance" inputmode="decimal" value="'.esc_attr($is_edit?$edit->opening_balance:'').'"></label><label>نام بانک<input name="bank_name" value="'.esc_attr($is_edit?$edit->bank_name:'').'"></label><label>شماره حساب<input name="account_number" value="'.esc_attr($is_edit?$edit->account_number:'').'"></label><label>شماره کارت<input name="card_number" value="'.esc_attr($is_edit?$edit->card_number:'').'"></label><label>شبا<input name="iban" value="'.esc_attr($is_edit?$edit->iban:'').'"></label><label>آیکن/اموجی<input name="icon" value="'.esc_attr($is_edit?($edit->icon?:'💳'):'💳').'"></label><label>رنگ<input type="color" name="color" value="'.esc_attr($is_edit?($edit->color?:'#ede9fe'):'#ede9fe').'"></label><label>فعال باشد؟ <span class="hpa-checkline"><input type="checkbox" name="is_active" value="1" '.checked($is_edit?(int)$edit->is_active:1,1,false).'> بله</span></label><label class="hpa-col-full">توضیح<textarea name="note">'.esc_textarea($is_edit?$edit->note:'').'</textarea></label></div>';
+        echo '</select></label><label>موجودی اولیه<input name="opening_balance" inputmode="decimal" value="'.esc_attr($is_edit?$edit->opening_balance:'').'"></label><label>نام بانک<input name="bank_name" value="'.esc_attr($is_edit?$edit->bank_name:'').'"></label><label>شماره حساب<input name="account_number" value="'.esc_attr($is_edit?$edit->account_number:'').'"></label><label>شماره کارت<input name="card_number" value="'.esc_attr($is_edit?$edit->card_number:'').'"></label><label>شبا<input name="iban" value="'.esc_attr($is_edit?$edit->iban:'').'"></label><label class="hpa-col-full hpa-icon-picker-field">نماد حساب (لوگوی بانک یا اموجی)'.$this->account_icon_picker($is_edit?($edit->icon?:'💳'):'💳').'</label><label>رنگ<input type="color" name="color" value="'.esc_attr($is_edit?($edit->color?:'#ede9fe'):'#ede9fe').'"></label><label>فعال باشد؟ <span class="hpa-checkline"><input type="checkbox" name="is_active" value="1" '.checked($is_edit?(int)$edit->is_active:1,1,false).'> بله</span></label><label class="hpa-col-full">توضیح<textarea name="note">'.esc_textarea($is_edit?$edit->note:'').'</textarea></label></div>';
         $this->form_close($is_edit?'ذخیره تغییرات حساب':'ثبت حساب');
         if ($is_edit) echo '<a class="hpa-btn hpa-btn-ghost hpa-cancel-edit" href="'.esc_url(remove_query_arg('hpa_edit_account')).'">انصراف از ویرایش</a>';
         echo '</details>';
@@ -2360,8 +2367,8 @@ final class Hamid_Personal_Accounting {
             $bal_fmt = esc_html($this->fmt_money($bal, $r->currency));
             $bg = $r->color ?: '#ede9fe';
             echo '<details class="hpa-account-card"><summary style="background:'.esc_attr($bg).'">';
-            echo '<span class="hpa-account-card-icon">'.esc_html($r->icon ?: '💳').'</span>';
-            echo '<div class="hpa-account-card-info"><strong>'.esc_html($r->name).'</strong><small>'.esc_html($this->person_label($r->person_key ?? 'hamidreza')).' · '.esc_html($types[$r->type]??$r->type).'</small></div>';
+            echo '<span class="hpa-account-card-icon">'.$this->account_icon_html($r->icon).'</span>';
+            echo '<div class="hpa-account-card-info"><strong>'.esc_html($r->name).'</strong><small>'.esc_html($this->account_type_label($r).' · '.$this->person_label($r->person_key ?? 'hamidreza')).'</small></div>';
             echo '<span class="hpa-account-card-balance">'.$bal_fmt.'</span></summary>';
             echo '<div class="hpa-account-card-body">';
             echo '<div class="hpa-account-card-details">';
@@ -2411,7 +2418,7 @@ final class Hamid_Personal_Accounting {
         echo '<div class="hpa-two hpa-account-reports-grid"><section class="hpa-card hpa-subcard"><h3>دفتر کل حساب‌ها</h3>';
         foreach($accounts as $a){
             $bal=(float)$a->opening_balance;
-            echo '<details class="hpa-ledger-card"><summary><b>'.esc_html(($a->icon?:'💳').' '.$a->name).'</b><small>'.esc_html($a->is_active?'فعال':'بسته‌شده').'</small></summary><div class="hpa-ledger-lines">';
+            echo '<details class="hpa-ledger-card"><summary><b>'.$this->account_icon_html($a->icon,'hpa-bank-logo-sm').' '.esc_html($a->name).'</b><small>'.esc_html($a->is_active?'فعال':'بسته‌شده').'</small></summary><div class="hpa-ledger-lines">';
             $rows=$wpdb->get_results($wpdb->prepare("SELECT * FROM {$this->tables['transactions']} WHERE account_id=%d AND status!='cancelled' ORDER BY gregorian_date ASC, id ASC LIMIT 120", $a->id));
             if(!$rows) echo '<p class="hpa-muted">گردشی ثبت نشده است.</p>';
             foreach($rows as $r){ $bal=$this->apply_transaction_to_balance($bal,$a->currency,$r); echo '<div class="hpa-list-row"><b>'.esc_html($r->jalali_date.' · '.($this->transaction_types()[$r->type]??$r->type)).'</b><span>'.esc_html($this->fmt_money($r->amount,$r->currency)).'</span><em>مانده: '.esc_html($this->fmt_money($bal,$a->currency)).'</em></div>'; }
@@ -2430,7 +2437,7 @@ final class Hamid_Personal_Accounting {
             if(!$closed) echo '<p class="hpa-muted">حساب بسته‌شده‌ای وجود ندارد.</p>';
             foreach($closed as $a){
                 $url=wp_nonce_url(admin_url('admin-post.php?action=hpa_reopen_account&id='.(int)$a->id), self::NONCE, 'hpa_nonce');
-                echo '<div class="hpa-list-row"><b>'.esc_html(($a->icon?:'💳').' '.$a->name).'</b><span>'.esc_html($this->person_label($a->person_key)).'</span><a class="hpa-btn hpa-btn-small hpa-btn-ghost" href="'.esc_url($url).'">فعال‌سازی دوباره</a></div>';
+                echo '<div class="hpa-list-row"><b>'.$this->account_icon_html($a->icon,'hpa-bank-logo-sm').' '.esc_html($a->name).'</b><span>'.esc_html($this->person_label($a->person_key)).'</span><a class="hpa-btn hpa-btn-small hpa-btn-ghost" href="'.esc_url($url).'">فعال‌سازی دوباره</a></div>';
             }
             echo '</section></section>';
         } else {
@@ -2489,8 +2496,8 @@ final class Hamid_Personal_Accounting {
         echo '<div class="hpa-form-grid">';
         echo '<label class="hpa-person-normal-field">شخص'. $this->person_select('person_key',$eperson) .'</label>';
         echo '<label>نوع تراکنش<select name="type">'; foreach($types as $k=>$v) echo '<option value="'.esc_attr($k).'" '.selected($etype,$k,false).'>'.esc_html($v).'</option>'; echo '</select></label>';
-        echo '<label>حساب مرتبط<select name="account_id">'; foreach($accounts as $a) echo '<option value="'.esc_attr($a->id).'" '.selected($eacc,$a->id,false).'>'.esc_html($a->icon.' '.$a->name).'</option>'; echo '</select></label>';
-        echo '<label class="hpa-transfer-account-field">حساب مقصد در انتقال<select name="to_account_id"><option value="0">ندارد</option>'; foreach($accounts as $a) echo '<option value="'.esc_attr($a->id).'" '.selected($eto,$a->id,false).'>'.esc_html($a->icon.' '.$a->name).'</option>'; echo '</select></label>';
+        echo '<label>حساب مرتبط<select name="account_id">'; foreach($accounts as $a) echo '<option value="'.esc_attr($a->id).'" '.selected($eacc,$a->id,false).'>'.esc_html($this->account_icon_text($a->icon).' '.$a->name).'</option>'; echo '</select></label>';
+        echo '<label class="hpa-transfer-account-field">حساب مقصد در انتقال<select name="to_account_id"><option value="0">ندارد</option>'; foreach($accounts as $a) echo '<option value="'.esc_attr($a->id).'" '.selected($eto,$a->id,false).'>'.esc_html($this->account_icon_text($a->icon).' '.$a->name).'</option>'; echo '</select></label>';
         echo '<label class="hpa-person-transfer-field">مبدأ پول'.$this->person_select('from_person_key',$efrom).'</label>';
         echo '<label class="hpa-person-transfer-field">مقصد پول'.$this->person_select('to_person_key',$eto_person).'</label>';
         echo '<label class="hpa-category-field">موضوع<select name="category_id" class="hpa-category-by-type"><option value="0" data-cat-type="all">بدون موضوع</option>'; foreach($categories as $c) echo '<option data-cat-type="'.esc_attr($c->type).'" value="'.esc_attr($c->id).'" '.selected($ecat,$c->id,false).'>'.esc_html($c->icon.' '.$c->name).'</option>'; echo '</select></label>';
@@ -2924,7 +2931,7 @@ echo '<section class="hpa-card hpa-assets-list-section"><h2>دارایی‌ها<
         echo '<section class="hpa-two"><div class="hpa-card"><h2>گزارش حساب‌ها</h2>';
         $accounts=$this->get_accounts();
         if(!$accounts) echo '<p class="hpa-muted">حسابی ثبت نشده است.</p>';
-        foreach($accounts as $a) echo '<div class="hpa-list-row"><span class="hpa-badge" style="background:'.esc_attr($a->color).'">'.esc_html($a->icon).'</span><b>'.esc_html($a->name).'<small class="hpa-inline-person">'.esc_html($this->person_label($a->person_key ?? 'hamidreza')).'</small></b><em>'.esc_html($this->fmt_money($balances[$a->id]??0,$a->currency)).'</em></div>';
+        foreach($accounts as $a) echo '<div class="hpa-list-row"><span class="hpa-badge" style="background:'.esc_attr($a->color).'">'.$this->account_icon_html($a->icon).'</span><b>'.esc_html($a->name).'<small class="hpa-inline-person">'.esc_html($this->account_type_label($a).' · '.$this->person_label($a->person_key ?? 'hamidreza')).'</small></b><em>'.esc_html($this->fmt_money($balances[$a->id]??0,$a->currency)).'</em></div>';
         echo '</div><div class="hpa-card"><h2>گزارش بر اساس شخص</h2>';
         foreach($this->persons() as $key=>$label){
             $pin=$this->transaction_sum_toman('income', $wpdb->prepare('person_key=%s', $key));
