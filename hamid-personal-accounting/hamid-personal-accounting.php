@@ -2,7 +2,7 @@
 /**
  * Plugin Name: HesabYar — Personal Accounting
  * Description: افزونه حسابداری شخصی فارسی با حساب‌ها، تراکنش‌ها، طلب و بدهی، دارایی‌ها، گزارش و نمودار سبک با رابط کاربری مدرن فارسی. دارای اتصال دوطرفه به نرم‌افزار دسکتاپ حساب‌یار.
- * Version: 3.18.1
+ * Version: 3.18.2
  * Author: hrschemiker
  * Text Domain: hamid-personal-accounting
  */
@@ -10,7 +10,7 @@
 if (!defined('ABSPATH')) { exit; }
 
 final class Hamid_Personal_Accounting {
-    const VERSION = '3.18.1';
+    const VERSION = '3.18.2';
     const ROLE = 'personal_finance_manager';
     const CAP = 'hpa_manage_accounting';
     const AUTHORIZED_EMAIL = 'hrschemiker@gmail.com';
@@ -3752,11 +3752,22 @@ echo '<section class="hpa-card hpa-assets-list-section"><h2>دارایی‌ها<
         $payload = $request->get_json_params();
         if (!is_array($payload)) $payload = [];
         $tables = isset($payload['tables']) && is_array($payload['tables']) ? $payload['tables'] : [];
+        // Build tombstones ({table_key => [original_id => true]}) from BOTH the incoming
+        // deleted_items and the existing server ones, so a row deleted on either side is
+        // neither resurrected during upsert nor kept afterwards.
+        $tomb = [];
+        $add_tomb = function($rows) use (&$tomb) {
+            if (!is_array($rows)) return;
+            foreach ($rows as $r) { if (is_array($r) && !empty($r['table_key']) && !empty($r['original_id'])) { $tk = sanitize_key((string)$r['table_key']); $tomb[$tk][(string)absint($r['original_id'])] = true; } }
+        };
+        if (isset($tables['deleted_items'])) $add_tomb($tables['deleted_items']);
+        if (!empty($this->tables['deleted_items'])) $add_tomb($wpdb->get_results("SELECT table_key, original_id FROM `{$this->tables['deleted_items']}`", ARRAY_A));
         $changed = [];
         foreach($this->api_sync_tables() as $key) {
             if (empty($tables[$key]) || !is_array($tables[$key]) || empty($this->tables[$key])) continue;
             $table = $this->tables[$key];
             $changed[$key] = 0;
+            $tset = isset($tomb[$key]) ? $tomb[$key] : [];
             foreach($tables[$key] as $row) {
                 if (!is_array($row)) continue;
                 $clean = [];
@@ -3766,6 +3777,8 @@ echo '<section class="hpa-card hpa-assets-list-section"><h2>دارایی‌ها<
                     $clean[$col] = is_scalar($val) || is_null($val) ? wp_kses_post((string)$val) : wp_json_encode($val, JSON_UNESCAPED_UNICODE);
                 }
                 if (!$clean) continue;
+                // don't resurrect a row that was deleted on either side
+                if ($key !== 'deleted_items' && !empty($clean['id']) && isset($tset[(string)absint($clean['id'])])) continue;
                 if (!empty($clean['id'])) {
                     $id = absint($clean['id']);
                     $exists = (int)$wpdb->get_var($wpdb->prepare("SELECT id FROM `$table` WHERE id=%d", $id));
@@ -3776,6 +3789,12 @@ echo '<section class="hpa-card hpa-assets-list-section"><h2>دارایی‌ها<
                     $wpdb->insert($table, $clean); $changed[$key]++;
                 }
             }
+        }
+        // Propagate deletions: remove the real row for every tombstone (both sides converge).
+        foreach ($tomb as $tk => $ids) {
+            if ($tk === 'deleted_items' || empty($this->tables[$tk])) continue;
+            $t = $this->tables[$tk];
+            foreach (array_keys($ids) as $oid) { $n = absint($oid); if ($n) $wpdb->delete($t, ['id'=>$n]); }
         }
         return ['ok'=>true,'changed'=>$changed,'server_time'=>current_time('mysql')];
     }
