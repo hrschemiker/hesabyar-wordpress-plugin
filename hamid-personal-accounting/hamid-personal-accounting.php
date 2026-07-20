@@ -2,7 +2,7 @@
 /**
  * Plugin Name: HesabYar — Personal Accounting
  * Description: افزونه حسابداری شخصی فارسی با حساب‌ها، تراکنش‌ها، طلب و بدهی، دارایی‌ها، گزارش و نمودار سبک با رابط کاربری مدرن فارسی. دارای اتصال دوطرفه به نرم‌افزار دسکتاپ حساب‌یار.
- * Version: 3.18.0
+ * Version: 3.18.1
  * Author: hrschemiker
  * Text Domain: hamid-personal-accounting
  */
@@ -10,7 +10,7 @@
 if (!defined('ABSPATH')) { exit; }
 
 final class Hamid_Personal_Accounting {
-    const VERSION = '3.18.0';
+    const VERSION = '3.18.1';
     const ROLE = 'personal_finance_manager';
     const CAP = 'hpa_manage_accounting';
     const AUTHORIZED_EMAIL = 'hrschemiker@gmail.com';
@@ -1055,6 +1055,9 @@ final class Hamid_Personal_Accounting {
             'recurring_due_gregorian_date'=>($type === 'recurring_debt') ? $recurring_due_gregorian : null,
             'status'=>$this->clean('status','done'), 'hide_amount'=>( isset($_POST['hide_amount']) ? 1 : 0 ), 'updated_at'=>current_time('mysql')
         ];
+        // A loan-installment payment implies its loan — derive source_loan_id from the chosen
+        // installment so the loan link is stored even though the «وام مرتبط» field is hidden.
+        if (!empty($data['loan_installment_id']) && empty($data['source_loan_id'])) { $_li = $this->get_installment((int)$data['loan_installment_id']); if ($_li) $data['source_loan_id'] = (int)$_li->loan_id; }
         if ($receipt) $data['receipt_id'] = $receipt;
         if (!$id) {
             $dup = (int)$wpdb->get_var($wpdb->prepare("SELECT id FROM {$this->tables['transactions']} WHERE status!='cancelled' AND account_id=%d AND type=%s AND amount=%f AND currency=%s AND jalali_date=%s AND COALESCE(description,'')=%s LIMIT 1", (int)$data['account_id'], $data['type'], (float)$data['amount'], $data['currency'], $data['jalali_date'], (string)$data['description']));
